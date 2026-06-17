@@ -5,9 +5,11 @@ use Raxon\App;
 use Raxon\Config;
 
 use Raxon\Doctrine\Module\Database;
+use Raxon\Doctrine\Module\Entity;
 use Raxon\Exception\DirectoryCreateException;
 
 use Raxon\Module\Cli;
+use Raxon\Module\Controller;
 use Raxon\Module\Data;
 use Raxon\Module\Dir;
 use Raxon\Module\Core;
@@ -20,6 +22,7 @@ use Exception;
 
 trait Main {
     const NAME = 'Monitor';
+    const ROUTE_NAME = 'application.monitor';
     /**
      * @throws DirectoryCreateException
      * @throws Exception
@@ -190,6 +193,7 @@ trait Main {
                 }                
             }
         }
+        /*
         if(!property_exists($options, 'environment')){
             $options->environment = $object->config('framework.environment');
         }
@@ -240,75 +244,7 @@ trait Main {
                 $connection->manager->flush();
             }
         }
-
-
-
-
-        /*
-         * on staging we have a new menu on raxon, we have an old desktop menu.
-         *
-        $repository = $connection->manager->getRepository('\\Entity\\Extension');
-        $property = 'name';
-        $value = [
-            'mp4',
-            'webm',
-        ];
-        foreach($value as $nr => $extension) {
-            $record = $repository->findOneBy([
-                $property => $extension
-            ]);
-            if ($record) {
-                $applications = $record->getApplications();
-                if($applications->count() > 0){
-                    $is_found = false;
-                    $list = $applications->toArray();
-                    foreach($list as $nr => $application){
-                        if($application->getUrl() === '{{route.get(\'application-video-player\')}}'){
-                            $is_found = true;
-                        }
-                    }
-                    if($is_found === false){
-                        $entity_application = new \Entity\Application();
-                        $entity_application->setUrl('{{route.get(\'application-video-player\')}}');
-                        $entity_application->setName('Video Player');
-                        $entity_application->iconUrl('/Application/VideoPlayer/Icon/Icon.png');
-
-//                        $connection->manager->persist($entity_application);
-//                        $connection->manager->flush();
-
-
-
-
-                        $entity_extension = new \Entity\Extension();
-                        $entity_extension->setName($extension);
-                        $connection->manager->persist($entity_extension);
-                        $connection->manager->flush();
-
-                        dd(($entity_extension->getId()));
-
-
-
-
-                    }
-                    //check if videoplayer is already installed
-                    ddd($applications->count());
-                } else {
-                    ddd('none');
-                }
-            } else {
-                dd('none');
-            }
-        }
         */
-/*
-
-        //enable application extensions allowed movietypes:
-            case 'mp4' :
-                    return 'video/mp4';
-            case 'webm' :
-                return 'video/webm';
-*/
-
         $command = 'app install raxon/account -patch';
         Core::execute($object, $command, $output, $notification);
         if($output){
@@ -317,6 +253,104 @@ trait Main {
         if($notification){
             echo $notification;
         }
+        $list = $this->user_list('ROLE_ADMIN');
+        $this->navigation_create($list);
+    }
+
+    /**
+     * @throws ObjectException
+     * @throws Exception
+     */
+    public function navigation_create($list): void
+    {
+        $object = $this->object();
+        if(array_key_exists('nodeList', $list)){
+            foreach($list['nodeList'] as $nr => $user){
+                if(array_key_exists('uuid', $user)){
+                    $node = new Node($object);
+                    $class = 'Application.Desktop.Navigation';
+                    $role = $node->role_system();
+                    $response = $node->record(
+                        $class,
+                        $role,
+                        [
+                            'where' => [
+                                [
+                                    'attribute' => 'name',
+                                    'operator' => '===',
+                                    'value' => self::NAME,
+                                ],
+                                'and',
+                                [
+                                    'attribute' => 'user',
+                                    'operator' => '===',
+                                    'value' => $user['uuid'],
+                                ]
+                            ],
+                            'relation' => false
+                        ]
+                    );
+                    if($response === null){
+                        $record = [
+                            "name" => self::NAME,
+                            "user" => $user['uuid'],
+                            "route" => (object) [
+                                'name' => self::ROUTE_NAME,
+                                'get' => '{{route.name($this.name)}}'
+                            ],
+                            "url" => '{{route.get($this.route.get)}}',
+                            "svg" => '/Application/' . self::NAME . '/Icon/Icon.png',
+                            "icon" => '/Application/' . self::NAME . '/Icon/Icon.png'
+                        ];
+                        $response = $node->create($class, $role, $record);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @throws ObjectException
+     * @throws Exception
+     */
+    public function user_list($role=''): array
+    {
+        $object = $this->object();
+        $list = [];
+        switch($role){
+            case 'ROLE_ADMIN':
+                $node = new Node($object);
+                $class = 'Account.Role';
+                $role = $node->role_system();
+                $response = $node->record($class, $role, [
+                    'filter' => [
+                        'name' => 'ROLE_ADMIN'
+                    ]
+                ]);
+                if(
+                    array_key_exists('node', $response) &&
+                    is_object($response['node'])
+                ){
+                    $table = 'user';
+                    $options = (object) [];
+                    $options->relation = true;
+                    $config = Database::config($object);
+                    $connection = $object->config('doctrine.environment.system.*');
+                    $em = Database::entity_manager($object, $config, $connection);
+                    $entity = str_replace('.', '', Controller::name($table));
+                    $object->request('entity', $entity);
+                    $object->request('where', [
+                        [
+                            'attribute' => 'role',
+                            'operator' => '===',
+                            'value' => 'JSON_CONTAINS("' . $entity  .'.role", "' .$response['node']->uuid.'") = 1'
+                        ]
+                    ]);
+                    $list = Entity::list($object, $em, $node->role_system(), $options);
+                }
+                break;
+        }
+        return $list;
     }
 
 }
