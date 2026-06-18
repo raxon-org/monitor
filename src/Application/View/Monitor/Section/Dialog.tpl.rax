@@ -27,7 +27,7 @@
     </div>
     <div class="menu-application-monitor">
         <ul>
-            <li>{{$request.file|>file.basename}}</li>
+            <li>{{$request.file|>default:'monitor.tpl'|>file.basename}}</li>
         </ul>
     </div>
     <div class="body">
